@@ -1,151 +1,84 @@
-import streamlit as st
 import pandas as pd
-import math
-from pathlib import Path
+import matplotlib.pyplot as plt
+import seaborn as sns
+import streamlit as st
+from babel.numbers import format_currency
+sns.set(style='dark')
 
-# Set the title and favicon that appear in the Browser's tab bar.
-st.set_page_config(
-    page_title='GDP dashboard',
-    page_icon=':earth_americas:', # This is an emoji shortcode. Could be a URL too.
-)
+st.set_page_config(layout="centered")
+# Header
+st.header('Bike Sharing Dataset Analysis:')
+ 
+# load dataset
+maindata_df = pd.read_csv("main_data.csv")
 
-# -----------------------------------------------------------------------------
-# Declare some useful functions.
-
-@st.cache_data
-def get_gdp_data():
-    """Grab GDP data from a CSV file.
-
-    This uses caching to avoid having to read the file every time. If we were
-    reading from an HTTP endpoint instead of a file, it's a good idea to set
-    a maximum age to the cache with the TTL argument: @st.cache_data(ttl='1d')
-    """
-
-    # Instead of a CSV on disk, you could read from an HTTP endpoint here too.
-    DATA_FILENAME = Path(__file__).parent/'data/gdp_data.csv'
-    raw_gdp_df = pd.read_csv(DATA_FILENAME)
-
-    MIN_YEAR = 1960
-    MAX_YEAR = 2022
-
-    # The data above has columns like:
-    # - Country Name
-    # - Country Code
-    # - [Stuff I don't care about]
-    # - GDP for 1960
-    # - GDP for 1961
-    # - GDP for 1962
-    # - ...
-    # - GDP for 2022
-    #
-    # ...but I want this instead:
-    # - Country Name
-    # - Country Code
-    # - Year
-    # - GDP
-    #
-    # So let's pivot all those year-columns into two: Year and GDP
-    gdp_df = raw_gdp_df.melt(
-        ['Country Code'],
-        [str(x) for x in range(MIN_YEAR, MAX_YEAR + 1)],
-        'Year',
-        'GDP',
+# Filter berdasarkan tanggal dan sidebar
+min_date = maindata_df["dteday"].min()
+max_date = maindata_df["dteday"].max()
+with st.sidebar:
+    # Menambahkan logo perusahaan
+    st.image("https://bikeshare.metro.net/wp-content/uploads/2016/04/cropped-metro-bike-share-favicon-1.png")
+    
+    # Mengambil start_date & end_date dari date_input
+    start_date, end_date = st.date_input(
+        label='Rentang Waktu',min_value=min_date,
+        max_value=max_date,
+        value=[min_date, max_date]
     )
+filtered_df = maindata_df[(maindata_df["dteday"] >= str(start_date)) & 
+                (maindata_df["dteday"] <= str(end_date))]
 
-    # Convert years from string to integers
-    gdp_df['Year'] = pd.to_numeric(gdp_df['Year'])
+# CREATE DF
+# daily rentals
+def create_daily_df(df):
+    order = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"]
+    daily_df = df.groupby("weekday").cnt.mean().reindex(order).reset_index()
+    return daily_df
+# by season
+def create_byseason_df(df):
+    byseason_df = df.groupby("season").cnt.mean().reset_index()
+    return byseason_df
+# by weather situation
+def create_byweathersit_df(df):
+    byweatsit_df = df.groupby("weathersit").cnt.mean().reset_index()
+    return byweatsit_df
 
-    return gdp_df
+# Panggil fungsi membuat dataset
+daily_sharing = create_daily_df(filtered_df)
+season_sharing = create_byseason_df(filtered_df)
+weathersit_sharing = create_byweathersit_df(filtered_df)
 
-gdp_df = get_gdp_data()
-
-# -----------------------------------------------------------------------------
-# Draw the actual page
-
-# Set the title that appears at the top of the page.
-'''
-# :earth_americas: GDP dashboard
-
-Browse GDP data from the [World Bank Open Data](https://data.worldbank.org/) website. As you'll
-notice, the data only goes to 2022 right now, and datapoints for certain years are often missing.
-But it's otherwise a great (and did I mention _free_?) source of data.
-'''
-
-# Add some spacing
-''
-''
-
-min_value = gdp_df['Year'].min()
-max_value = gdp_df['Year'].max()
-
-from_year, to_year = st.slider(
-    'Which years are you interested in?',
-    min_value=min_value,
-    max_value=max_value,
-    value=[min_value, max_value])
-
-countries = gdp_df['Country Code'].unique()
-
-if not len(countries):
-    st.warning("Select at least one country")
-
-selected_countries = st.multiselect(
-    'Which countries would you like to view?',
-    countries,
-    ['DEU', 'FRA', 'GBR', 'BRA', 'MEX', 'JPN'])
-
-''
-''
-''
-
-# Filter the data
-filtered_gdp_df = gdp_df[
-    (gdp_df['Country Code'].isin(selected_countries))
-    & (gdp_df['Year'] <= to_year)
-    & (from_year <= gdp_df['Year'])
-]
-
-st.header('GDP over time', divider='gray')
-
-''
-
-st.line_chart(
-    filtered_gdp_df,
-    x='Year',
-    y='GDP',
-    color='Country Code',
+# Plot data
+# Rata-rata penyewaan setiap hari
+st.subheader("Rata-Rata Penyewaan Setiap Hari")
+plt.figure(figsize=(12, 5))
+sns.barplot(
+    y="cnt",
+    x="weekday",
+    data=daily_sharing,
 )
+plt.title("Rata-rata Jumlah Penyewaan Sepeda Berdasarkan Hari", loc="center", fontsize=15)
+plt.ylabel("Rata-rata Penyewaan Sepeda")
+plt.xlabel("Hari")
+st.pyplot(plt)
 
-''
-''
+# Rata-rata penyewaan berdasarkan musim dan kondisi cuaca
+st.subheader("Pengaruh Musim dan Cuaca")
+fig, ax = plt.subplots(nrows=1, ncols=2, figsize=(40, 15))
+# musim
+sns.barplot(x="season", y="cnt", data=season_sharing, ax=ax[0])
+ax[0].set_ylabel("Rata-rata Penyewaan Sepeda", fontsize=30)
+ax[0].set_xlabel("Musim", fontsize=30)
+ax[0].set_title("Rata-rata Penyewaan Sepeda Berdasarkan Musim", loc="center", fontsize=50)
+ax[0].tick_params(axis='y', labelsize=35)
+ax[0].tick_params(axis='x', labelsize=30)
+# kondisi cuaca
+sns.barplot(x="weathersit", y="cnt", data=weathersit_sharing, ax=ax[1])
+ax[1].set_ylabel(None)
+ax[1].set_xlabel("Cuaca", fontsize=30)
+ax[1].set_title("Rata-rata Penyewaan Sepeda Berdasarkan Musim", loc="center", fontsize=50)
+ax[1].tick_params(axis='y', labelsize=35)
+ax[1].tick_params(axis='x', labelsize=30)
+st.pyplot(fig)
 
-
-first_year = gdp_df[gdp_df['Year'] == from_year]
-last_year = gdp_df[gdp_df['Year'] == to_year]
-
-st.header(f'GDP in {to_year}', divider='gray')
-
-''
-
-cols = st.columns(4)
-
-for i, country in enumerate(selected_countries):
-    col = cols[i % len(cols)]
-
-    with col:
-        first_gdp = first_year[first_year['Country Code'] == country]['GDP'].iat[0] / 1000000000
-        last_gdp = last_year[last_year['Country Code'] == country]['GDP'].iat[0] / 1000000000
-
-        if math.isnan(first_gdp):
-            growth = 'n/a'
-            delta_color = 'off'
-        else:
-            growth = f'{last_gdp / first_gdp:,.2f}x'
-            delta_color = 'normal'
-
-        st.metric(
-            label=f'{country} GDP',
-            value=f'{last_gdp:,.0f}B',
-            delta=growth,
-            delta_color=delta_color
-        )
+st.caption('Copyright (c) 2025')
